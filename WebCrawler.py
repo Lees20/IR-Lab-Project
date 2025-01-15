@@ -291,15 +291,44 @@ def compute_tfidf(query, corpus):
 
 
 # Υπολογισμός συνημιτονοειδούς ομοιότητας για VSM
-def compute_cosine_similarity(query, corpus):
-    cosine_scores = []
-    query_vector = np.array([compute_tf(term, query) * compute_idf(term, corpus) for term in query])
+from collections import defaultdict
+
+def compute_cosine_similarity(query_terms, corpus):
+    """Υπολογίζει τη συνημιτονοειδή ομοιότητα (cosine similarity) μεταξύ του ερωτήματος και των εγγράφων."""
+    # Δημιουργία λεξικού με IDF για όλους τους όρους
+    term_idf = {}
+    num_docs = len(corpus)
     for doc in corpus:
-        doc_vector = np.array([compute_tf(term, doc) * compute_idf(term, corpus) for term in query])
-        cosine_similarity = np.dot(query_vector, doc_vector) / (np.linalg.norm(query_vector) * np.linalg.norm(doc_vector))
-        cosine_scores.append(cosine_similarity)
-    ranked_indices = np.argsort(cosine_scores)[::-1]
-    return ranked_indices, cosine_scores
+        for term in set(doc):  # Μόνο μοναδικοί όροι
+            if term not in term_idf:
+                term_idf[term] = math.log((num_docs + 1) / (1 + sum(1 for d in corpus if term in d)))  # Smoothing
+
+    # Υπολογισμός διανύσματος ερωτήματος
+    query_vector = defaultdict(float)
+    for term in query_terms:
+        if term in term_idf:
+            query_vector[term] = query_terms.count(term) * term_idf[term]
+
+    # Υπολογισμός διανυσμάτων εγγράφων και cosine similarity
+    scores = []
+    for doc in corpus:
+        doc_vector = defaultdict(float)
+        for term in doc:
+            if term in term_idf:
+                doc_vector[term] = doc.count(term) * term_idf[term]
+        
+        # Υπολογισμός cosine similarity
+        numerator = sum(query_vector[term] * doc_vector[term] for term in query_vector)
+        query_norm = math.sqrt(sum(v**2 for v in query_vector.values()))
+        doc_norm = math.sqrt(sum(v**2 for v in doc_vector.values()))
+        denominator = query_norm * doc_norm
+        cosine_similarity = numerator / denominator if denominator != 0 else 0
+        scores.append(cosine_similarity)
+
+    # Ταξινόμηση εγγράφων με βάση τα scores
+    ranked_indices = np.argsort(scores)[::-1]
+    return ranked_indices, scores
+
 
 # Υπολογισμός BM25
 def compute_bm25(query, corpus, k=1.5, b=0.75):
