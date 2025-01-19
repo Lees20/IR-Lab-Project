@@ -25,9 +25,6 @@ stop_words = set(stopwords.words('english'))
 lemmatizer = WordNetLemmatizer()
 stemmer = PorterStemmer()
 
-# Wikipedia URLs
-base_url = 'https://en.wikipedia.org'
-start_url = f'{base_url}/wiki/Artificial_intelligence'
 
 # Μεταβλητές
 visited_urls = set()
@@ -167,9 +164,6 @@ def evaluate_postfix(postfix):
     return result
 
 
-
-
-
 #Κατάταξη 
 def compute_tfidf(query_terms, corpus):
     """Υπολογίζει το TF-IDF σκορ κάθε εγγράφου για τους όρους του ερωτήματος."""
@@ -274,8 +268,6 @@ def compute_vsm(query_terms, corpus, debug=False):
     return ranked_indices, scores
 
 
-
-
 def search_with_ranking(query, corpus, ranking_method="tfidf"):
     """Αναζήτηση και κατάταξη με βάση τον επιλεγμένο αλγόριθμο."""
     postfix_query = infix_to_postfix(query)
@@ -283,7 +275,7 @@ def search_with_ranking(query, corpus, ranking_method="tfidf"):
 
     if not filtered_indices:
         print("No results found.")
-        return
+        return None, None  
 
     filtered_indices = list(filtered_indices)
     filtered_corpus = [corpus[idx] for idx in filtered_indices]
@@ -297,7 +289,7 @@ def search_with_ranking(query, corpus, ranking_method="tfidf"):
         ranked_indices, scores = compute_vsm(query_terms, filtered_corpus)
     else:
         print("Invalid ranking method.")
-        return
+        return None, None  
 
     # Φιλτράρισμα έγγραφων με σκορ > 0
     valid_results = [
@@ -307,11 +299,13 @@ def search_with_ranking(query, corpus, ranking_method="tfidf"):
 
     if not valid_results:
         print("No valid results found.")
-        return
+        return None, None 
 
     print(f"Results ranked by {ranking_method.upper()}:")
     for rank, (doc_idx, score) in enumerate(valid_results):
         print(f"- {articles[doc_idx]['Title']} (Score: {score:.4f}) - URL: {articles[doc_idx]['URL']}")
+
+    return [doc_idx for doc_idx, _ in valid_results], [score for _, score in valid_results]
 
 
 #Διεπαφή Αναζήτησης
@@ -337,7 +331,94 @@ def search_interface():
             print("Invalid choice. Please enter 1, 2, or 3.")
 
 
-#Εκτέλεση
-crawl_wikipedia(start_url, max_articles=10)
-build_inverted_index()
-search_interface()
+def evaluate_search_engine(test_queries, corpus):
+    while True:
+        print("\nChoose ranking method for evaluation: (1) TF-IDF, (2) BM25, (3) VSM, (4) Exit")
+        choice = input("Enter 1, 2, 3, or 4: ")
+
+        if choice == "1":
+            ranking_method = "tfidf"
+        elif choice == "2":
+            ranking_method = "bm25"
+        elif choice == "3":
+            ranking_method = "vsm"
+        elif choice == "4":
+            print("Exiting evaluation.")
+            break
+        else:
+            print("Invalid choice. Please enter 1, 2, 3, or 4.")
+            continue
+
+        results = []
+        all_precisions = []
+
+        for query, relevant_docs in test_queries.items():
+            print(f"\nEvaluating query: {query}")
+            ranked_indices, scores = search_with_ranking(query, [doc["Cleaned_Content"].split() for doc in corpus], ranking_method)
+
+            if ranked_indices is None or scores is None:  # Handle case where no results are found
+                print(f"No results for query: {query}")
+                continue
+
+            # Υπολογισμός Precision, Recall, F1
+            retrieved_docs = ranked_indices[:len(relevant_docs)]  
+            true_positive = len(set(retrieved_docs) & set(relevant_docs))
+            precision = true_positive / len(retrieved_docs) if retrieved_docs else 0
+            recall = true_positive / len(relevant_docs) if relevant_docs else 0
+            f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0
+
+            # Υπολογισμός Average Precision 
+            precisions = []
+            retrieved_set = set()
+            for rank, idx in enumerate(ranked_indices):
+                if idx in relevant_docs:
+                    retrieved_set.add(idx)
+                    precision_at_k = len(retrieved_set) / (rank + 1)
+                    precisions.append(precision_at_k)
+            average_precision = sum(precisions) / len(relevant_docs) if precisions else 0
+            all_precisions.append(average_precision)
+
+            results.append({
+                "Query": query,
+                "Precision": precision,
+                "Recall": recall,
+                "F1-Score": f1,
+                "Average Precision": average_precision,
+            })
+
+        # Υπολογισμός Συνολικών Μετρικών
+        mean_average_precision = sum(all_precisions) / len(all_precisions) if all_precisions else 0
+        avg_precision = sum(res["Precision"] for res in results) / len(results) if results else 0
+        avg_recall = sum(res["Recall"] for res in results) / len(results) if results else 0
+        avg_f1 = sum(res["F1-Score"] for res in results) / len(results) if results else 0
+
+        print("\nΑποτελέσματα ανά Ερώτημα:")
+        for res in results:
+            print(f"- Query: {res['Query']}, Precision: {res['Precision']:.2f}, Recall: {res['Recall']:.2f}, "
+                  f"F1: {res['F1-Score']:.2f}, Average Precision: {res['Average Precision']:.2f}")
+
+        print("\nΣυνολικά Αποτελέσματα:")
+        print(f"Μέση Ακρίβεια (MAP): {mean_average_precision:.2f}")
+        print(f"Μέση Precision: {avg_precision:.2f}")
+        print(f"Μέση Recall: {avg_recall:.2f}")
+        print(f"Μέσο F1-Score: {avg_f1:.2f}")
+
+
+
+
+# ΕΚΤΕΛΕΣΗ
+if __name__ == "__main__":
+    base_url = "https://en.wikipedia.org"
+    start_url = f"{base_url}/wiki/Artificial_intelligence"
+
+    crawl_wikipedia(start_url, max_articles=10)
+    build_inverted_index()
+    search_interface()
+
+    #Eρωτήματα δοκιμής
+    test_queries = {
+        "ai": [0, 2, 4],
+        "machine learning": [1, 3],
+        "deep learning": [5, 6, 7],
+    }
+    evaluate_search_engine(test_queries, articles)
