@@ -92,7 +92,7 @@ def build_inverted_index():
             if stemmed_token not in inverted_index:
                 inverted_index[stemmed_token] = set()
             inverted_index[stemmed_token].add(idx)
-    print("Inverted Index Built:", inverted_index)
+    #print("Inverted Index Built:", inverted_index)
 
 
 #Boolean Query Processing
